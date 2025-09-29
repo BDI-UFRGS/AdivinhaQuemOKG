@@ -1,0 +1,9 @@
+{
+  "name": "projeto-extensao",
+  "private": true,
+  "scripts": {
+    "build": "npm run build --prefix knowledgeGraph && npm run build --prefix backend && npm run build --prefix frontend",
+    "lint": "npm run lint --prefix knowledgeGraph && npm run lint --prefix backend && npm run lint --prefix frontend",
+    "test": "npm run test --prefix knowledgeGraph && npm run test --prefix backend && npm run test --prefix frontend"
+  }
+}
