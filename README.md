@@ -1,4 +1,4 @@
-# Projeto Extensão – Monorepo
+# Projeto Extensão
 
 Esta versão organiza o MVP em uma arquitetura mínima com front-end, back-end e módulo de grafos de conhecimento independentes.
 
@@ -52,7 +52,7 @@ Os serviços possuem `Dockerfile` dedicados em `backend/` e `frontend/`. O `dock
 
 Executando `make run` ou `docker compose up --build` todas as dependências são resolvidas automaticamente.
 
-> **Dica:** o container do Neo4j baixa o plugin APOC automaticamente. Caso você já tenha subido a stack antes desta alteração, remova
+> O container do Neo4j baixa o plugin APOC automaticamente. Caso você já tenha subido a stack antes desta alteração, remova
 > os volumes persistidos (`docker compose down -v`) para que o plugin seja instalado novamente.
 
 ## Grafos de conhecimento
