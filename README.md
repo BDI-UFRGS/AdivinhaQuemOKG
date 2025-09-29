@@ -18,10 +18,10 @@ Esta versão organiza o MVP em uma arquitetura mínima com front-end, back-end e
 - npm 10+
 - Docker e Docker Compose (para execução via containers)
 
-## Instalação
+## Rodar
 
 ```bash
-make install
+make run
 ```
 
 ## Scripts principais
