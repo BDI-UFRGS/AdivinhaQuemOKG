@@ -1,0 +1,19 @@
+{
+  "name": "backend",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "npm run build --prefix ../knowledgeGraph",
+    "dev": "node --watch src/index.js",
+    "build": "mkdir -p dist && cp src/*.js dist/",
+    "prestart": "npm run build --prefix ../knowledgeGraph",
+    "start": "node dist/index.js",
+    "reseed": "node ./scripts/reseedKnowledgeGraph.mjs",
+    "lint": "node --check src/index.js",
+    "test": "npm run lint"
+  },
+  "dependencies": {
+    "neo4j-driver": "^5.26.0"
+  }
+}

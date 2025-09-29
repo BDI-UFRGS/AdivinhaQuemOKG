@@ -1,0 +1,47 @@
+services:
+  neo4j:
+    image: neo4j:5.23
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_dbms_security_procedures_allowlist: apoc.*
+      NEO4J_AUTH: ${NEO4J_AUTH}
+      NEO4J_server_default__listen__address: 0.0.0.0
+      NEO4J_server_default__advertised__address: neo4j
+      NEO4J_dbms_memory_heap_initial__size: 512m
+      NEO4J_dbms_memory_heap_max__size: 512m
+      NEO4J_dbms_memory_pagecache_size: 512m
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: ${PORT:-3000}
+      NEO4J_URI: ${NEO4J_URI}
+      NEO4J_USER: ${NEO4J_USER}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      NEO4J_ENTITY_LABEL: ${NEO4J_ENTITY_LABEL:-Pessoa}
+    depends_on:
+      - neo4j
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: ${FRONTEND_VITE_API_URL:-}
+    ports:
+      - "4173:4173"
+    depends_on:
+      - backend
+
+volumes:
+  neo4j_data:
+  neo4j_logs:

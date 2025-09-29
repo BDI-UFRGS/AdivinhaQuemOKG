@@ -1,0 +1,7 @@
+{
+  "name": "pessoas",
+  "title": "Pessoas",
+  "description": "Grafo de conhecimento derivado do dataset materializado de pessoas.",
+  "entityLabel": "Pessoa",
+  "materializedDataset": "pessoas.json"
+}
