@@ -2,16 +2,6 @@
 
 Esta versão organiza o MVP em uma arquitetura mínima com front-end, back-end e módulo de grafos de conhecimento independentes.
 
-## Estrutura
-
-```
-.
-├── backend/   # API HTTP com Node.js puro
-├── frontend/  # Aplicação React/Vite
-├── docker-compose.yml
-└── Makefile
-```
-
 ## Pré-requisitos
 
 - Node.js 20+
@@ -52,14 +42,11 @@ Os serviços possuem `Dockerfile` dedicados em `backend/` e `frontend/`. O `dock
 
 Executando `make run` ou `docker compose up --build` todas as dependências são resolvidas automaticamente.
 
-> O container do Neo4j baixa o plugin APOC automaticamente. Caso você já tenha subido a stack antes desta alteração, remova
-> os volumes persistidos (`docker compose down -v`) para que o plugin seja instalado novamente.
-
 ## Grafos de conhecimento
 
 Os grafos disponíveis ficam em [`knowledgeGraph/neo4j/`](knowledgeGraph/neo4j/). Cada pasta possui arquivos de schema, carga e consultas consumidas pelo back-end. No boot a API lista automaticamente os grafos configurados e o front-end permite escolher qual deles utilizar.
 
-- `pessoas/` — grafo original, carregado diretamente a partir do materializado embutido na aplicação.
-- `diagnosticos/` — grafo clínico derivado de `knowledgeGraph/materialized/diagnosticos.json`. Para que a carga funcione é necessário informar o diretório de importação do Neo4j via variável de ambiente `NEO4J_IMPORT_DIR` (ou sobrescrever `import.directory`/`import.directoryEnv` no `config.json` do grafo). O arquivo materializado é copiado automaticamente para esse diretório e importado com `apoc.load.json`.
+- `pessoas/` — grafo de características pessoais, carregado diretamente a partir de `knowledgeGraph/materialized/pessoas.json`.
+- `diagnosticos/` — grafo clínico carregado diretamente a partir de `knowledgeGraph/materialized/diagnosticos.json`.
 
-As consultas e filtros expostos pelo back-end mantêm o mesmo contrato entre os grafos, garantindo que a UX permaneça inalterada ao alternar entre eles.
+As consultas e filtros expostos pelo back-end mantêm o mesmo padrão entre os grafos, garantindo que a UX permaneça inalterada ao alternar entre eles.
