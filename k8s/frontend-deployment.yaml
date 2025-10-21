@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    kompose.cmd: kompose convert
+    kompose.cmd: kompose convert -f ../docker-compose.yml
     kompose.version: 1.36.0 (HEAD)
   labels:
     io.kompose.service: frontend
@@ -15,13 +15,13 @@ spec:
   template:
     metadata:
       annotations:
-        kompose.cmd: kompose convert
+        kompose.cmd: kompose convert -f ../docker-compose.yml
         kompose.version: 1.36.0 (HEAD)
       labels:
         io.kompose.service: frontend
     spec:
       containers:
-        - image: frontend
+        - image: ghcr.io/bdi-ufrgs/adivinhaquem-frotend:0.1
           name: frontend
           ports:
             - containerPort: 4173

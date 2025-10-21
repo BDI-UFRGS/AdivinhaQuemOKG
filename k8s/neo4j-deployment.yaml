@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    kompose.cmd: kompose convert
+    kompose.cmd: kompose convert -f ../docker-compose.yml
     kompose.version: 1.36.0 (HEAD)
   labels:
     io.kompose.service: neo4j
@@ -17,7 +17,7 @@ spec:
   template:
     metadata:
       annotations:
-        kompose.cmd: kompose convert
+        kompose.cmd: kompose convert -f ../docker-compose.yml
         kompose.version: 1.36.0 (HEAD)
       labels:
         io.kompose.service: neo4j
@@ -25,6 +25,7 @@ spec:
       containers:
         - env:
             - name: NEO4J_AUTH
+              value: neo4j/okgpassw
             - name: NEO4J_PLUGINS
               value: '["apoc"]'
             - name: NEO4J_dbms_memory_heap_initial__size
@@ -41,7 +42,7 @@ spec:
               value: neo4j
             - name: NEO4J_server_default__listen__address
               value: 0.0.0.0
-          image: neo4j:5.23
+          image: docker.io/neo4j:5.23
           name: neo4j
           ports:
             - containerPort: 7474

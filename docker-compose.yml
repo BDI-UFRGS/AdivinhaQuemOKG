@@ -1,6 +1,6 @@
 services:
   neo4j:
-    image: neo4j:5.23
+    image: docker.io/neo4j:5.23
     ports:
       - "7474:7474"
       - "7687:7687"
@@ -18,6 +18,7 @@ services:
       - neo4j_data:/data
       - neo4j_logs:/logs
   backend:
+    image: ghcr.io/bdi-ufrgs/adivinhaquem-backend:0.1
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -25,13 +26,14 @@ services:
       - "3000:3000"
     environment:
       PORT: ${PORT:-3000}
-      NEO4J_URI: ${NEO4J_URI}
+      NEO4J_URI: neo4j
       NEO4J_USER: ${NEO4J_USER}
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
       NEO4J_ENTITY_LABEL: ${NEO4J_ENTITY_LABEL:-Pessoa}
     depends_on:
       - neo4j
   frontend:
+    image: ghcr.io/bdi-ufrgs/adivinhaquem-frotend:0.1
     build:
       context: .
       dockerfile: frontend/Dockerfile
@@ -43,5 +45,5 @@ services:
       - backend
 
 volumes:
-  neo4j_data:
-  neo4j_logs:
+  neo4j_data: 
+  neo4j_logs: 

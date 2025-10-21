@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    kompose.cmd: kompose convert
+    kompose.cmd: kompose convert -f ../docker-compose.yml
     kompose.version: 1.36.0 (HEAD)
   labels:
     io.kompose.service: backend
@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        kompose.cmd: kompose convert
+        kompose.cmd: kompose convert -f ../docker-compose.yml
         kompose.version: 1.36.0 (HEAD)
       labels:
         io.kompose.service: backend
@@ -25,11 +25,14 @@ spec:
             - name: NEO4J_ENTITY_LABEL
               value: Pessoa
             - name: NEO4J_PASSWORD
+              value: okgpassw
             - name: NEO4J_URI
+              value: neo4j
             - name: NEO4J_USER
+              value: neo4j
             - name: PORT
               value: "3000"
-          image: backend
+          image: ghcr.io/bdi-ufrgs/adivinhaquem-backend:0.1
           name: backend
           ports:
             - containerPort: 3000

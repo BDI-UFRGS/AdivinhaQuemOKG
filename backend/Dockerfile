@@ -1,4 +1,4 @@
-FROM node:20-alpine AS build
+FROM docker.io/node:20-alpine AS build
 WORKDIR /app
 COPY package.json ./package.json
 COPY backend ./backend
