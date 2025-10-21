@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    kompose.cmd: kompose convert
+    kompose.version: 1.36.0 (HEAD)
+  labels:
+    io.kompose.service: neo4j
+  name: neo4j
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: neo4j
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        kompose.cmd: kompose convert
+        kompose.version: 1.36.0 (HEAD)
+      labels:
+        io.kompose.service: neo4j
+    spec:
+      containers:
+        - env:
+            - name: NEO4J_AUTH
+            - name: NEO4J_PLUGINS
+              value: '["apoc"]'
+            - name: NEO4J_dbms_memory_heap_initial__size
+              value: 512m
+            - name: NEO4J_dbms_memory_heap_max__size
+              value: 512m
+            - name: NEO4J_dbms_memory_pagecache_size
+              value: 512m
+            - name: NEO4J_dbms_security_procedures_allowlist
+              value: apoc.*
+            - name: NEO4J_dbms_security_procedures_unrestricted
+              value: apoc.*
+            - name: NEO4J_server_default__advertised__address
+              value: neo4j
+            - name: NEO4J_server_default__listen__address
+              value: 0.0.0.0
+          image: neo4j:5.23
+          name: neo4j
+          ports:
+            - containerPort: 7474
+              protocol: TCP
+            - containerPort: 7687
+              protocol: TCP
+          volumeMounts:
+            - mountPath: /data
+              name: neo4j-data
+            - mountPath: /logs
+              name: neo4j-logs
+      restartPolicy: Always
+      volumes:
+        - name: neo4j-data
+          persistentVolumeClaim:
+            claimName: neo4j-data
+        - name: neo4j-logs
+          persistentVolumeClaim:
+            claimName: neo4j-logs
