@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph from "./components/ForceGraph";
 import type {
   AppliedFilter,
   BooleanFilterDefinition,
   CategoricalFilterDefinition,
   DatasetFilterMetadata,
-  FeatureDetailNode,
+  FeatureDetailTreeNode,
   FeatureTreeNode,
   FilterDefinition,
   FilterGroupKey,
@@ -24,18 +24,18 @@ import {
   type KnowledgeGraph,
   type KnowledgeGraphDTO,
 } from "./types/knowledgeGraph";
+import { formatValue } from "./utils/value";
+import {
+  buildVisualizationConfig,
+  buildVisualizationWithGraphData,
+  formatLegendLabel,
+} from "./visualization/config";
 import {
   BASE_VISUALIZATION_CONFIG,
   type GuessableNodeSummary,
   type VisualizationConfig,
   type VisualizationConfigDTO,
 } from "./visualization/types";
-import {
-  buildVisualizationConfig,
-  buildVisualizationWithGraphData,
-  formatLegendLabel,
-} from "./visualization/config";
-import { formatValue } from "./utils/value";
 
 const DEFAULT_API_URL =
   typeof window !== "undefined"
@@ -43,7 +43,10 @@ const DEFAULT_API_URL =
     : "http://localhost:3000";
 const API_URL = import.meta.env.VITE_API_URL ?? DEFAULT_API_URL;
 
-type UsedFilter = { slug: string; option?: string };
+const DETAIL_PATH_SEPARATOR = "::";
+const buildDetailPathKey = (segments: readonly string[]): string => segments.join(DETAIL_PATH_SEPARATOR);
+
+type UsedFilter = { slug: string; option?: string; resposta?: "SIM" | "NÃO" };
 
 type PendingSelection =
   | { kind: "presence"; filter: BooleanFilterDefinition }
@@ -212,6 +215,7 @@ export default function App() {
   const [perguntando, setPerguntando] = useState(false);
   const [selectedGroupKey, setSelectedGroupKey] = useState<FilterGroupKey | null>(null);
   const [selectedFeatureKey, setSelectedFeatureKey] = useState<string | null>(null);
+  const [selectedDetailPath, setSelectedDetailPath] = useState<string[]>([]);
   const [pendingSelection, setPendingSelection] = useState<PendingSelection | null>(null);
 
   const [venceu, setVenceu] = useState(false);
@@ -483,15 +487,38 @@ export default function App() {
 
   const featuresByGroup = useMemo(() => {
     const grouped = new Map<FilterGroupKey, FeatureTreeNode[]>();
-    if (!metadata) return grouped;
+    if (!metadata) {
+      return grouped;
+    }
 
-    const featureLookup = new Map<string, FeatureTreeNode>();
+    type MutableDetailNode = {
+      key: string;
+      path: string[];
+      segment: string;
+      label: string;
+      relation: string | null;
+      filter?: CategoricalFilterDefinition;
+      children: MutableDetailNode[];
+      childrenMap: Map<string, MutableDetailNode>;
+    };
 
-    metadata.filters.forEach((filter) => {
-      const { featureSlug: parsedFeatureSlug, detailType } = splitFilterSlug(filter.slug);
-      const featureSlug = filter.featureSlug ?? parsedFeatureSlug ?? filter.slug;
+    type MutableFeatureTreeNode = FeatureTreeNode & {
+      detailRootsMutable: MutableDetailNode[];
+      detailRootMap: Map<string, MutableDetailNode>;
+    };
+
+    const normalizeSegment = (value: unknown): string => {
+      if (typeof value !== "string") {
+        return "";
+      }
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : "";
+    };
+
+    const featureLookup = new Map<string, MutableFeatureTreeNode>();
+
+    const ensureFeatureEntry = (filter: FilterDefinition, featureSlug: string): MutableFeatureTreeNode => {
       const featureKey = `${filter.group}::${featureSlug}`;
-
       let entry = featureLookup.get(featureKey);
       if (!entry) {
         entry = {
@@ -501,22 +528,94 @@ export default function App() {
           group: filter.group,
           featureRelation: filter.featureRelation ?? undefined,
           booleanFilter: undefined,
-          detailFilters: [],
+          detailTree: [],
+          detailNodeLookup: new Map(),
+          detailRootsMutable: [],
+          detailRootMap: new Map(),
         };
         featureLookup.set(featureKey, entry);
         const list = grouped.get(filter.group) ?? [];
         list.push(entry);
         grouped.set(filter.group, list);
-      } else {
-        if (!entry.featureRelation && filter.featureRelation) {
-          entry.featureRelation = filter.featureRelation;
+      }
+      return entry;
+    };
+
+    const insertDetailNode = (
+      entry: MutableFeatureTreeNode,
+      filter: CategoricalFilterDefinition,
+      detailPath: readonly string[],
+    ) => {
+      const sanitizedPath = detailPath
+        .map((segment) => normalizeSegment(segment))
+        .filter((segment) => segment.length > 0);
+      if (sanitizedPath.length === 0) {
+        return;
+      }
+      let parent: MutableDetailNode | null = null;
+      let accumulatedPath: string[] = [];
+      sanitizedPath.forEach((segment, index) => {
+        accumulatedPath = [...accumulatedPath, segment];
+        let node: MutableDetailNode | undefined;
+        if (parent) {
+          node = parent.childrenMap.get(segment);
+        } else {
+          node = entry.detailRootMap.get(segment);
         }
-        if (filter.featureName && filter.featureName.trim()) {
-          entry.label = filter.featureName.trim();
+        if (!node) {
+          node = {
+            key: buildDetailPathKey(accumulatedPath),
+            path: [...accumulatedPath],
+            segment,
+            label: segment,
+            relation: null,
+            filter: undefined,
+            children: [],
+            childrenMap: new Map(),
+          };
+          if (parent) {
+            parent.children.push(node);
+            parent.childrenMap.set(segment, node);
+          } else {
+            entry.detailRootsMutable.push(node);
+            entry.detailRootMap.set(segment, node);
+          }
         }
+        if (index === sanitizedPath.length - 1) {
+          const detailLabel =
+            typeof filter.detailLabel === "string" && filter.detailLabel.trim().length > 0
+              ? filter.detailLabel.trim()
+              : segment;
+          node.label = detailLabel;
+          node.relation = filter.detailRelation ?? filter.detailType ?? null;
+          node.filter = filter;
+        } else if (!node.filter && (!node.label || node.label === node.segment)) {
+          const fallbackLabel =
+            typeof filter.detailLabel === "string" && filter.detailLabel.trim().length > 0
+              ? filter.detailLabel.trim()
+              : segment;
+          node.label = fallbackLabel;
+        }
+        parent = node;
+      });
+    };
+
+    metadata.filters.forEach((filter) => {
+      const { featureSlug: parsedFeatureSlug, detailType: parsedDetailType } = splitFilterSlug(filter.slug);
+      const normalizedFeatureSlug = normalizeSegment(filter.featureSlug ?? parsedFeatureSlug ?? filter.slug);
+      if (!normalizedFeatureSlug) {
+        return;
       }
 
-      if (filter.variant === "boolean") {
+      const entry = ensureFeatureEntry(filter, normalizedFeatureSlug);
+      if (!entry.featureRelation && filter.featureRelation) {
+        entry.featureRelation = filter.featureRelation;
+      }
+      if (filter.featureName && filter.featureName.trim()) {
+        entry.label = filter.featureName.trim();
+      }
+
+      if (isBooleanFilterDefinition(filter)) {
         entry.booleanFilter = filter;
         if (filter.featureName && filter.featureName.trim()) {
           entry.label = filter.featureName.trim();
@@ -527,23 +626,60 @@ export default function App() {
         return;
       }
 
-      const detailKey = detailType ?? filter.slug;
-      const detailLabel =
-        filter.detailLabel && filter.detailLabel.trim()
-          ? filter.detailLabel.trim()
-          : detailType
-          ? detailType.replace(/_/g, " ")
-          : filter.label;
-      entry.detailFilters.push({
-        key: detailKey,
-        label: detailLabel,
-        relation: filter.detailRelation ?? detailType ?? null,
-        detailType,
-        filter,
-      });
+      const rawPath = Array.isArray(filter.path) ? filter.path : [];
+      const normalizedPath = rawPath
+        .map((segment) => normalizeSegment(segment))
+        .filter((segment) => segment.length > 0);
+
+      let fullPath: string[];
+      if (normalizedPath.length > 0) {
+        fullPath =
+          normalizedPath[0] === normalizedFeatureSlug
+            ? normalizedPath
+            : [normalizedFeatureSlug, ...normalizedPath];
+      } else {
+        const fallbackDetail = normalizeSegment(filter.detailType ?? parsedDetailType ?? "");
+        if (fallbackDetail) {
+          fullPath = [normalizedFeatureSlug, fallbackDetail];
+        } else {
+          fullPath = [normalizedFeatureSlug, normalizeSegment(filter.slug)];
+        }
+      }
+
+      if (fullPath[0] !== normalizedFeatureSlug) {
+        fullPath = [normalizedFeatureSlug, ...fullPath.slice(1)];
+      }
+
+      const detailPath = fullPath.slice(1);
+      if (detailPath.length === 0) {
+        return;
+      }
+
+      insertDetailNode(entry, filter, detailPath);
+
       if (filter.featureName && filter.featureName.trim()) {
         entry.label = filter.featureName.trim();
       }
+    });
+
+    featureLookup.forEach((entry) => {
+      const lookup = new Map<string, FeatureDetailTreeNode>();
+      const finalizeNode = (node: MutableDetailNode): FeatureDetailTreeNode => {
+        const children = node.children.map((child) => finalizeNode(child));
+        const finalNode: FeatureDetailTreeNode = {
+          key: node.key,
+          path: node.path,
+          segment: node.segment,
+          label: node.label,
+          relation: node.relation,
+          filter: children.length === 0 ? node.filter : undefined,
+          children,
+        };
+        lookup.set(node.key, finalNode);
+        return finalNode;
+      };
+      entry.detailTree = entry.detailRootsMutable.map((node) => finalizeNode(node));
+      entry.detailNodeLookup = lookup;
     });
 
     return grouped;
@@ -555,6 +691,7 @@ export default function App() {
     if (!metadata || !Array.isArray(metadata.groups) || metadata.groups.length === 0) {
       setSelectedGroupKey(null);
       setSelectedFeatureKey(null);
+      setSelectedDetailPath([]);
       setPendingSelection(null);
       return;
     }
@@ -562,6 +699,7 @@ export default function App() {
     if (!currentGroupExists) {
       setSelectedGroupKey(metadata.groups[0].key);
       setSelectedFeatureKey(null);
+      setSelectedDetailPath([]);
       setPendingSelection(null);
     }
   }, [metadata, selectedGroupKey]);
@@ -569,15 +707,21 @@ export default function App() {
   useEffect(() => {
     if (!selectedGroupKey) {
       setSelectedFeatureKey(null);
+      setSelectedDetailPath([]);
       setPendingSelection(null);
       return;
     }
     const features = featuresByGroup.get(selectedGroupKey) ?? [];
     if (!features.some((feature) => feature.key === selectedFeatureKey)) {
       setSelectedFeatureKey(null);
+      setSelectedDetailPath([]);
       setPendingSelection(null);
     }
   }, [selectedGroupKey, selectedFeatureKey, featuresByGroup]);
+
+  useEffect(() => {
+    setSelectedDetailPath([]);
+  }, [selectedFeatureKey]);
 
   useEffect(() => {
     if (!pendingSelection) {
@@ -681,7 +825,7 @@ export default function App() {
       setAplicados(payload.filtrosAplicados);
       setResposta(payload.resposta);
       setRestantes(payload.pessoas);
-      setUsadas((u) => [...u, { slug }]);
+      setUsadas((u) => [...u, { slug, resposta: payload.resposta }]);
       registrarSeVenceu(payload.pessoas, usadas.length);
     } catch (err) {
       console.error("Falha ao consultar o oráculo", err);
@@ -733,7 +877,7 @@ export default function App() {
       setAplicados(payload.filtrosAplicados);
       setResposta(payload.resposta);
       setRestantes(payload.pessoas);
-      setUsadas((u) => [...u, { slug, option: valor }]);
+      setUsadas((u) => [...u, { slug, option: valor, resposta: payload.resposta }]);
       registrarSeVenceu(payload.pessoas, usadas.length);
     } catch (err) {
       console.error("Falha ao consultar o oráculo", err);
@@ -791,7 +935,63 @@ export default function App() {
   );
   const relationBuckets = Array.from(featuresGroupedByRelation.entries());
   const selectedFeature = featuresForSelectedGroup.find((feature) => feature.key === selectedFeatureKey) ?? null;
-  const detailSections = selectedFeature ? selectedFeature.detailFilters : [];
+  const detailTreeRoots = selectedFeature ? selectedFeature.detailTree : [];
+  const isFlatDetailTree = useMemo(
+    () => detailTreeRoots.length > 0 && detailTreeRoots.every((node) => node.children.length === 0),
+    [detailTreeRoots],
+  );
+  const detailLevels = useMemo(() => {
+    if (!selectedFeature || detailTreeRoots.length === 0 || isFlatDetailTree) {
+      return [] as FeatureDetailTreeNode[][];
+    }
+    const levels: FeatureDetailTreeNode[][] = [];
+    let currentNodes = detailTreeRoots;
+    levels.push(currentNodes);
+    for (let index = 0; index < selectedDetailPath.length; index += 1) {
+      const segment = selectedDetailPath[index];
+      const nextNode = currentNodes.find((node) => node.segment === segment);
+      if (!nextNode || nextNode.children.length === 0) {
+        break;
+      }
+      currentNodes = nextNode.children;
+      levels.push(currentNodes);
+    }
+    return levels;
+  }, [selectedFeature, detailTreeRoots, selectedDetailPath]);
+  const selectedDetailNodeKey = useMemo(() => buildDetailPathKey(selectedDetailPath), [selectedDetailPath]);
+  const selectedDetailNode =
+    selectedFeature && selectedDetailPath.length > 0
+      ? selectedFeature.detailNodeLookup.get(selectedDetailNodeKey) ?? null
+      : null;
+
+  useEffect(() => {
+    if (!selectedFeature) {
+      if (selectedDetailPath.length > 0) {
+        setSelectedDetailPath([]);
+      }
+      return;
+    }
+    if (selectedDetailPath.length === 0) {
+      return;
+    }
+    let currentNodes = selectedFeature.detailTree;
+    const validPath: string[] = [];
+    for (const segment of selectedDetailPath) {
+      const nextNode = currentNodes.find((node) => node.segment === segment);
+      if (!nextNode) {
+        setSelectedDetailPath(validPath);
+        return;
+      }
+      validPath.push(segment);
+      currentNodes = nextNode.children.length > 0 ? nextNode.children : [];
+    }
+  }, [selectedFeature, selectedDetailPath]);
+
+  useEffect(() => {
+    if (isFlatDetailTree && selectedDetailPath.length > 0) {
+      setSelectedDetailPath([]);
+    }
+  }, [isFlatDetailTree, selectedDetailPath.length]);
 
   const pendingDescription = useMemo(() => {
     if (!pendingSelection) {
@@ -844,13 +1044,35 @@ export default function App() {
   const handleSelectGroup = (key: FilterGroupKey) => {
     setSelectedGroupKey((prev) => (prev === key ? null : key));
     setSelectedFeatureKey(null);
+    setSelectedDetailPath([]);
     setPendingSelection(null);
   };
 
   const handleSelectFeature = (featureKey: string) => {
     setSelectedFeatureKey((prev) => (prev === featureKey ? null : featureKey));
+    setSelectedDetailPath([]);
     setPendingSelection(null);
   };
+
+  const handleSelectDetailNode = (node: FeatureDetailTreeNode) => {
+    if (isFlatDetailTree) {
+      return;
+    }
+    const nodePath = Array.isArray(node.path) ? node.path : [];
+    if (nodePath.length === 0) {
+      return;
+    }
+    setSelectedDetailPath((prev) => {
+      const currentKey = buildDetailPathKey(prev);
+      const nodeKey = buildDetailPathKey(nodePath);
+      if (currentKey === nodeKey) {
+        return prev.slice(0, -1);
+      }
+      return [...nodePath];
+    });
+    setPendingSelection(null);
+  };
+
 
   const handleSelectPresence = (filter: BooleanFilterDefinition) => {
     if (perguntando || !alvo) {
@@ -910,6 +1132,64 @@ export default function App() {
     setPendingSelection({ kind: "option", filter, optionValue });
   };
 
+  const renderDetailFilterCard = (node: FeatureDetailTreeNode) => {
+    const detailFilter = node.filter;
+    if (!detailFilter) {
+      return null;
+    }
+    const relationLabel = node.relation ? node.relation.toUpperCase() : null;
+    const detailActive =
+      pendingSelection?.kind === "option" && pendingSelection.filter.slug === detailFilter.slug;
+    return (
+      <div
+        key={node.key}
+        className={`rounded-xl border p-3 ${detailActive ? "border-slate-400 bg-slate-50" : "border-slate-200 bg-white"}`}
+      >
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
+          <span className="font-semibold text-slate-700">{node.label}</span>
+          {relationLabel && (
+            <span className="uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
+              {relationLabel}
+            </span>
+          )}
+        </div>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {detailFilter.options.length ? (
+            detailFilter.options.map((opcao) => {
+              const optionAvailable = isOptionAvailable(disponibilidade, detailFilter.slug, opcao.value);
+              const optionUsed = usadas.some((entry) => entry.slug === detailFilter.slug && entry.option === opcao.value);
+              const disabled = perguntando || !alvo || optionUsed || !optionAvailable;
+              const ativo =
+                pendingSelection?.kind === "option" &&
+                pendingSelection.filter.slug === detailFilter.slug &&
+                pendingSelection.optionValue === opcao.value;
+              return (
+                <button
+                  key={opcao.value}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => handleSelectOption(detailFilter, opcao.value)}
+                  className={`px-2.5 py-1 rounded-xl border text-xs transition ${
+                    disabled
+                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                      : ativo
+                      ? "bg-slate-800 text-white border-slate-800"
+                      : "bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-200"
+                  }`}
+                  title={disabled ? "Filtro indisponível" : "Selecionar valor"}
+                >
+                  {opcao.label}
+                </button>
+              );
+            })
+          ) : (
+            <span className="text-xs text-slate-500">Sem opções disponíveis.</span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const handleApplyPending = async () => {
     if (!pendingSelection || !canApplyPending) {
       return;
@@ -930,7 +1210,7 @@ export default function App() {
   const vitoria = restantes.length === 1 ? (
     <div className="p-3 rounded-xl bg-emerald-600 text-white text-sm mt-2 flex items-center justify-between">
       <span>
-        🎉 Você acertou! A pessoa era <strong>{nomePessoa(restantes[0])}</strong>.
+        🎉 Você acertou! O alvo era <strong>{nomePessoa(restantes[0])}</strong>.
         {best !== null && <em className="ml-2 opacity-90">Recorde: {best} filtro(s)</em>}
       </span>
       <button onClick={novoAlvo} className="ml-2 px-3 py-1 rounded-lg bg-white/20 hover:bg-white/30">Jogar novamente</button>
@@ -1055,6 +1335,7 @@ export default function App() {
                     }
                     setSelectedGroupKey(null);
                     setSelectedFeatureKey(null);
+                    setSelectedDetailPath([]);
                     setPendingSelection(null);
                   }}
                   className="text-sm px-3 py-1 rounded-xl bg-slate-800 text-white hover:opacity-90"
@@ -1085,10 +1366,16 @@ export default function App() {
                   const label = obterRotuloFiltro(f.slug);
                   const optionLabel = obterRotuloOpcao(f.slug, f.option);
                   const key = `${f.slug}:${f.option ?? ""}`;
+                  const colorClass =
+                    f.resposta === "SIM"
+                      ? "bg-emerald-600 text-white"
+                      : f.resposta === "NÃO"
+                      ? "bg-rose-600 text-white"
+                      : "bg-slate-800 text-white";
                   return (
                     <span
                       key={key}
-                      className="px-2 py-1 text-xs rounded-full bg-slate-800 text-white"
+                      className={`px-2 py-1 text-xs rounded-full ${colorClass}`}
                     >
                       {label}
                       {optionLabel ? `: ${optionLabel}` : ""}
@@ -1191,7 +1478,7 @@ export default function App() {
                           </div>
                         )}
                       </div>
-                      {selectedFeature.booleanFilter && (
+                      {selectedFeature.booleanFilter && selectedFeature.detailTree.length === 0 && (
                         (() => {
                           const booleanFilter = selectedFeature.booleanFilter;
                           const slug = booleanFilter.slug;
@@ -1242,78 +1529,54 @@ export default function App() {
                       )}
                     </div>
                     <div className="mt-3 space-y-3">
-                      {detailSections.length > 0 ? (
-                        detailSections.map((detail) => {
-                          const relationLabel = detail.relation ? detail.relation.toUpperCase() : null;
-                          const detailActive =
-                            pendingSelection?.kind === "option" &&
-                            pendingSelection.filter.slug === detail.filter.slug;
-                          return (
-                            <div
-                              key={detail.key}
-                              className={`rounded-xl border p-3 ${
-                                detailActive ? "border-slate-400 bg-slate-50" : "border-slate-200 bg-white"
-                              }`}
-                            >
-                              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
-                                <span className="font-semibold text-slate-700">{detail.label}</span>
-                                {relationLabel && (
-                                  <span className="uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
-                                    {relationLabel}
-                                  </span>
-                                )}
+                      {detailTreeRoots.length > 0 ? (
+                        isFlatDetailTree ? (
+                          detailTreeRoots.map((node) => renderDetailFilterCard(node))
+                        ) : (
+                          <>
+                            {detailLevels.map((nodes, levelIndex) => (
+                              <div key={`detail-level-${levelIndex}`} className="flex flex-wrap gap-2">
+                                {nodes.map((node) => {
+                                  const nodeFilterSlug = node.filter?.slug;
+                                  const disabled =
+                                    perguntando || !alvo || (nodeFilterSlug ? usado(nodeFilterSlug) : false);
+                                  const ativo = selectedDetailPath[levelIndex] === node.segment;
+                                  return (
+                                    <button
+                                      key={node.key}
+                                      type="button"
+                                      onClick={() => handleSelectDetailNode(node)}
+                                      disabled={disabled}
+                                      className={`px-3 py-1.5 rounded-xl border text-xs transition ${
+                                        disabled
+                                          ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                                          : ativo
+                                          ? "bg-slate-800 text-white border-slate-800"
+                                          : "bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-200"
+                                      }`}
+                                    >
+                                      {node.label}
+                                    </button>
+                                  );
+                                })}
                               </div>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {detail.filter.options.length ? (
-                                  detail.filter.options.map((opcao) => {
-                                    const optionAvailable = isOptionAvailable(
-                                      disponibilidade,
-                                      detail.filter.slug,
-                                      opcao.value,
-                                    );
-                                    const optionUsed = usadas.some(
-                                      (entry) => entry.slug === detail.filter.slug && entry.option === opcao.value,
-                                    );
-                                    const disabled =
-                                      perguntando ||
-                                      !alvo ||
-                                      optionUsed ||
-                                      !optionAvailable;
-                                    const ativo =
-                                      pendingSelection?.kind === "option" &&
-                                      pendingSelection.filter.slug === detail.filter.slug &&
-                                      pendingSelection.optionValue === opcao.value;
-                                    return (
-                                      <button
-                                        key={opcao.value}
-                                        type="button"
-                                        disabled={disabled}
-                                        onClick={() => handleSelectOption(detail.filter, opcao.value)}
-                                        className={`px-2.5 py-1 rounded-xl border text-xs transition ${
-                                          disabled
-                                            ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                                            : ativo
-                                            ? "bg-slate-800 text-white border-slate-800"
-                                            : "bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-200"
-                                        }`}
-                                        title={disabled ? "Filtro indisponível" : "Selecionar valor"}
-                                      >
-                                        {opcao.label}
-                                      </button>
-                                    );
-                                  })
-                                ) : (
-                                  <span className="text-xs text-slate-500">Sem opções disponíveis.</span>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })
+                            ))}
+                          </>
+                        )
                       ) : (
                         <div className="text-xs text-slate-500">
                           Sem filtros específicos para esta característica.
                         </div>
                       )}
+                      {!isFlatDetailTree
+                        ? selectedDetailNode && selectedDetailNode.filter
+                          ? renderDetailFilterCard(selectedDetailNode)
+                          : selectedFeature && detailTreeRoots.length > 0
+                          ? (
+                              <div className="text-xs text-slate-500">Selecione uma subcategoria para continuar.</div>
+                            )
+                          : null
+                        : null}
                     </div>
                   </>
                 ) : selectedGroup ? (
