@@ -137,10 +137,74 @@ async function needsReseeding(session, entityLabel) {
   return false;
 }
 
+function escapeIdentifier(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  return `\`${value.replace(/`/g, "``")}\``;
+}
+
+async function dropSchemaEntries(session, query, params, dropStatementBuilder) {
+  const result = await session.executeRead((tx) => tx.run(query, params));
+  for (const record of result.records) {
+    const name = record.get("name");
+    if (typeof name !== "string") {
+      continue;
+    }
+    const identifier = escapeIdentifier(name.trim());
+    if (!identifier) {
+      continue;
+    }
+    await session.run(dropStatementBuilder(identifier));
+  }
+}
+
+async function dropAllSchema(session) {
+  await dropSchemaEntries(session, "SHOW CONSTRAINTS YIELD name RETURN name", {}, (identifier) =>
+    `DROP CONSTRAINT ${identifier}`,
+  );
+  await dropSchemaEntries(
+    session,
+    "SHOW INDEXES YIELD name, type WHERE type <> 'LOOKUP' RETURN name",
+    {},
+    (identifier) => `DROP INDEX ${identifier}`,
+  );
+}
+
+async function dropDatasetSchema(session, entityLabel) {
+  const labels = [entityLabel, "Categoria", "Valor"].filter(
+    (label) => typeof label === "string" && label.trim().length > 0,
+  );
+  if (labels.length === 0) {
+    return;
+  }
+  await dropSchemaEntries(
+    session,
+    `
+      SHOW CONSTRAINTS YIELD name, labelsOrTypes
+      WHERE any(label IN labelsOrTypes WHERE label IN $labels)
+      RETURN name
+    `,
+    { labels },
+    (identifier) => `DROP CONSTRAINT ${identifier}`,
+  );
+  await dropSchemaEntries(
+    session,
+    `
+      SHOW INDEXES YIELD name, type, labelsOrTypes
+      WHERE type <> 'LOOKUP' AND any(label IN labelsOrTypes WHERE label IN $labels)
+      RETURN name
+    `,
+    { labels },
+    (identifier) => `DROP INDEX ${identifier}`,
+  );
+}
+
 async function clearExistingDataset(session, entityLabel, options = {}) {
   const { full = false } = options;
   if (full) {
     await session.executeWrite((tx) => tx.run("MATCH (n) DETACH DELETE n"));
+    await dropAllSchema(session);
   } else {
     await session.executeWrite((tx) =>
       tx.run(
@@ -152,6 +216,7 @@ async function clearExistingDataset(session, entityLabel, options = {}) {
         { label: entityLabel },
       ),
     );
+    await dropDatasetSchema(session, entityLabel);
   }
   await clearGraphMetadata(session);
 }

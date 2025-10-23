@@ -212,12 +212,19 @@ async function fetchFilters(session, definition, queries) {
     }
     const aggregatorNome = record.get("aggregatorNome");
     const contextoRaw = record.get("contexto");
-    const contexto =
+    const aggregatorContextRaw = record.has("aggregatorContext")
+      ? record.get("aggregatorContext")
+      : undefined;
+    const featureContext =
       typeof contextoRaw === "string" && contextoRaw.trim()
         ? contextoRaw.trim()
         : typeof featureEntry.contexto === "string" && featureEntry.contexto.trim()
         ? featureEntry.contexto.trim()
         : null;
+    const contexto =
+      typeof aggregatorContextRaw === "string" && aggregatorContextRaw.trim()
+        ? aggregatorContextRaw.trim()
+        : featureContext;
     const featureId =
       typeof featureEntry.id === "string" && featureEntry.id.trim()
         ? featureEntry.id.trim()
