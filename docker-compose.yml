@@ -18,7 +18,7 @@ services:
       - neo4j_data:/data
       - neo4j_logs:/logs
   backend:
-    image: ghcr.io/bdi-ufrgs/adivinhaquem-backend:0.1
+    image: ghcr.io/bdi-ufrgs/adivinhaquem-backend:0.2
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -33,7 +33,7 @@ services:
     depends_on:
       - neo4j
   frontend:
-    image: ghcr.io/bdi-ufrgs/adivinhaquem-frotend:0.1
+    image: ghcr.io/bdi-ufrgs/adivinhaquem-frotend:0.2
     build:
       context: .
       dockerfile: frontend/Dockerfile
