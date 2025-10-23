@@ -82,19 +82,17 @@ WHERE type(relFA) IN ['TEM', 'TEM_TIPO']
   AND agg <> feature
 OPTIONAL MATCH (agg)-[atrib:TEM_TIPO]->(:Valor)
 WHERE atrib.doenca IS NOT NULL
-  AND (
-    contexto IS NULL OR contexto = '' OR atrib.contexto = contexto
-  )
 WITH feature,
      grupo,
      contexto,
      agg,
-     collect(DISTINCT atrib.contexto) AS matchingContexts
-WHERE size(matchingContexts) > 0
+     [ctx IN collect(DISTINCT atrib.contexto) WHERE ctx IS NOT NULL AND trim(ctx) <> ''] AS aggregatorContexts
+WHERE size(aggregatorContexts) > 0
 WITH feature,
      grupo,
      contexto,
      agg,
+     aggregatorContexts,
      CASE
        WHEN feature.id STARTS WITH 'cat|'
          THEN substring(feature.id, 4)
@@ -115,6 +113,7 @@ RETURN feature.id AS featureId,
        max(feature.nome) AS featureNome,
        categoriaSlug,
        contexto,
+       aggregatorContexts[0] AS aggregatorContext,
        agg.id AS aggregatorId,
        aggregatorSlug,
        max(agg.nome) AS aggregatorNome
@@ -212,7 +211,8 @@ CALL {
   MATCH (categoria:Categoria)-[rel:TEM_TIPO]->(valor:Valor)
   WHERE rel.doenca = entity.id
   RETURN collect(DISTINCT valor) AS valorNodes,
-         collect(DISTINCT rel) AS valorRels
+         collect(DISTINCT rel) AS valorRels,
+         collect(DISTINCT categoria) AS valorCategorias
 }
 WITH diagnosticos,
      nivel1Nodes,
@@ -220,9 +220,10 @@ WITH diagnosticos,
      outrasCategorias,
      structRels,
      valorNodes,
-     valorRels
+     valorRels,
+     valorCategorias
 WITH diagnosticos,
-     coalesce(nivel1Nodes, []) + coalesce(outrasCategorias, []) AS categoriaList,
+     coalesce(nivel1Nodes, []) + coalesce(outrasCategorias, []) + coalesce(valorCategorias, []) AS categoriaList,
      coalesce(possuiRels, []) + coalesce(structRels, []) AS categoriaRelList,
      coalesce(valorNodes, []) AS valorList,
      coalesce(valorRels, []) AS valorRelList

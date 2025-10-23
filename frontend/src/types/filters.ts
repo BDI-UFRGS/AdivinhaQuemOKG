@@ -102,12 +102,14 @@ export const extractFeatureLabel = (filter: FilterDefinition): string => {
   return firstPart ? firstPart.trim() : filter.label;
 };
 
-export type FeatureDetailNode = {
+export type FeatureDetailTreeNode = {
   key: string;
+  path: readonly string[];
+  segment: string;
   label: string;
   relation?: string | null;
-  detailType?: string | null;
-  filter: CategoricalFilterDefinition;
+  filter?: CategoricalFilterDefinition;
+  children: FeatureDetailTreeNode[];
 };
 
 export type FeatureTreeNode = {
@@ -117,5 +119,6 @@ export type FeatureTreeNode = {
   featureRelation?: string;
   group: FilterGroupKey;
   booleanFilter?: BooleanFilterDefinition;
-  detailFilters: FeatureDetailNode[];
+  detailTree: FeatureDetailTreeNode[];
+  detailNodeLookup: Map<string, FeatureDetailTreeNode>;
 };

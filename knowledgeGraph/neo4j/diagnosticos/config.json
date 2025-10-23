@@ -1,7 +1,7 @@
 {
   "name": "diagnosticos",
   "title": "Diagnósticos",
-  "description": "Grafo de conhecimento derivado do materializado de diagnósticos clínicos.",
+  "description": "Grafo de conhecimento derivado do materializado completo de diagnósticos clínicos.",
   "entityLabel": "Diagnostico",
   "materializedDataset": "diagnosticos.json",
   "default": true
